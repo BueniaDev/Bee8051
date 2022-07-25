@@ -38,6 +38,13 @@ class Sim8051 : public Bee8051Interface
 	    }
 
 	    core.init();
+
+	    for (int i = 0; i < 5; i++)
+	    {
+		core.debugoutput();
+		core.runinstruction();
+	    }
+
 	    return true;
 	}
 
@@ -76,6 +83,13 @@ class Sim8051 : public Bee8051Interface
 	uint8_t readROM(uint16_t addr)
 	{
 	    return main_rom.at(addr);
+	}
+
+	void portOut(int port, uint8_t data)
+	{
+	    (void)port;
+	    (void)data;
+	    return;
 	}
 
     private:
@@ -145,6 +159,7 @@ class Sim8051 : public Bee8051Interface
 
 	    while (cycles < cycle_count)
 	    {
+		// core.debugoutput();
 		cycles += core.runinstruction();
 	    }
 	}

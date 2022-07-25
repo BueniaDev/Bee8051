@@ -11,7 +11,6 @@ set(SIM8051_SOURCES
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DSDL_MAIN_HANDLED")
 
 add_executable(sim8051 ${SIM8051_SOURCES})
-include_directories(sim8051 ${BEE8051_INCLUDE_DIR})
 target_link_libraries(sim8051 libbee8051)
 
 find_package(SDL2 REQUIRED)

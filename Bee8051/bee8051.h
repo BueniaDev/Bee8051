@@ -25,6 +25,7 @@
 #include <vector>
 #include <array>
 #include <cassert>
+#include <unordered_map>
 using namespace std;
 
 namespace bee8051
@@ -41,6 +42,21 @@ namespace bee8051
 		exit(0);
 		return 0;
 	    }
+
+	    virtual uint8_t portIn(int port)
+	    {
+		port &= 3;
+		cout << "Reading value from port of " << dec << int(port) << endl;
+		exit(0);
+		return 0;
+	    }
+
+	    virtual void portOut(int port, uint8_t data)
+	    {
+		port &= 3;
+		cout << "Writing value of " << hex << int(data) << " to port of " << dec << int(port) << endl;
+		exit(0);
+	    }
     };
 
     class BeeMCS51
@@ -54,9 +70,90 @@ namespace bee8051
 
 	    int runinstruction();
 
-	    void debugoutput(bool print_disassembly = false);
+	    void debugoutput(bool print_disassembly = true);
+	    size_t disassembleinstr(ostream &stream, uint32_t pc);
 
 	    void setInterface(Bee8051Interface *cb);
+
+	protected:
+	    virtual string get_sfr_names(uint16_t addr)
+	    {
+		stringstream ss;
+		auto i = mem_names.find(addr);
+
+		if (i == mem_names.end())
+		{
+		    ss << "$" << hex << int(addr);
+		}
+		else
+		{
+		    ss << i->second;
+		}
+
+		return ss.str();
+	    }
+
+	    string get_bit_addr(uint8_t addr)
+	    {
+		stringstream ss;
+		if (addr < 0x80)
+		{
+		    ss << "$" << hex << int((addr >> 3) | 0x20) << "." << dec << int(addr & 0x7);
+		}
+		else
+		{
+		    auto i = mem_names.find((addr | 0x100));
+
+		    if (i == mem_names.end())
+		    {
+			i = mem_names.find((addr & 0xF8));
+
+			if (i == mem_names.end())
+			{
+			    ss << "$" << hex << int((addr & 0xF8)) << "." << dec << int(addr & 0x7);
+			}
+			else
+			{
+			    ss << i->second << "." << dec << int((addr & 0x7));
+			}
+		    }
+		    else
+		    {
+			ss << i->second;
+		    }
+		}
+
+		return ss.str();
+	    }
+
+	    struct meminfo
+	    {
+		int addr = 0;
+		string name = "";
+	    };
+
+	    void add_names(vector<meminfo> info)
+	    {
+		for (size_t i = 0; info[i].addr >= 0; i++)
+		{
+		    mem_names[info[i].addr] = info[i].name;
+		}
+	    }
+
+	    template<typename ...Names>
+	    void add_names(vector<meminfo> info, Names &&... names)
+	    {
+		add_names(names...);
+		add_names(info);
+	    }
+
+	    vector<meminfo> default_names = 
+	    {
+		{0x81, "sp"},
+		{0x1B6, "wr"},
+		{0x1B7, "rd"},
+		{-1, ""},
+	    };
 
 	private:
 	    template<typename T>
@@ -96,6 +193,8 @@ namespace bee8051
 	    int data_bus_width = 0;
 
 	    uint8_t readROM(uint16_t addr);
+	    uint8_t portIn(int port);
+	    void portOut(int port, uint8_t data);
 
 	    int executeinstr(uint8_t instr);
 
@@ -107,33 +206,85 @@ namespace bee8051
 	    uint8_t getReg(int reg)
 	    {
 		reg &= 7;
-		return readRAM(reg);
+		int addr = ((getPSW() & 0x18) | reg);
+		return readRAM(addr);
 	    }
 
 	    void setReg(int reg, uint8_t data)
 	    {
 		reg &= 7;
-		writeRAM(reg, data);
+		int addr = ((getPSW() & 0x18) | reg);
+		writeRAM(addr, data);
 	    }
 
 	    uint8_t getAccum()
 	    {
-		return readRAM(0x1E0);
+		return readSFR(0xE0);
 	    }
 
 	    void setAccum(uint8_t data)
 	    {
-		writeRAM(0x1E0, data);
+		writeSFR(0xE0, data);
 	    }
 
 	    uint8_t getPSW()
 	    {
-		return readRAM(0x1D0);
+		return readSFR(0xD0);
 	    }
 
 	    void setPSW(uint8_t data)
 	    {
-		writeRAM(0x1D0, data);
+		writeSFR(0xD0, data);
+	    }
+
+	    uint8_t getSP()
+	    {
+		return readSFR(0x81);
+	    }
+
+	    void setSP(uint8_t data)
+	    {
+		writeSFR(0x81, data);
+	    }
+
+	    uint8_t getP0()
+	    {
+		return readRAM(0x180);
+	    }
+
+	    void setP0(uint8_t data)
+	    {
+		writeSFR(0x80, data);
+	    }
+
+	    uint8_t getP1()
+	    {
+		return readRAM(0x190);
+	    }
+
+	    void setP1(uint8_t data)
+	    {
+		writeSFR(0x90, data);
+	    }
+
+	    uint8_t getP2()
+	    {
+		return readRAM(0x1A0);
+	    }
+
+	    void setP2(uint8_t data)
+	    {
+		writeSFR(0xA0, data);
+	    }
+
+	    uint8_t getP3()
+	    {
+		return readRAM(0x1B0);
+	    }
+
+	    void setP3(uint8_t data)
+	    {
+		writeSFR(0xB0, data);
 	    }
 
 	    void changePSWBit(int bit, bool is_set)
@@ -216,10 +367,122 @@ namespace bee8051
 		}
 		else
 		{
-		    data = readRAM(0x100 | addr);
+		    data = readSFR(addr);
 		}
 
 		return data;
+	    }
+
+	    void writeIRAM(uint8_t addr, uint8_t data)
+	    {
+		if (addr < 0x80)
+		{
+		    writeRAM(addr, data);
+		}
+		else
+		{
+		    writeSFR(addr, data);
+		}
+	    }
+
+	    uint8_t readIRAMIndirect(uint8_t addr)
+	    {
+		uint8_t data = 0xFF;
+		int ram_addr = (1 << data_bus_width);
+
+		if (addr < ram_addr)
+		{
+		    data = readRAM(addr);
+		}
+
+		return data;
+	    }
+
+	    void writeIRAMIndirect(uint8_t addr, uint8_t data)
+	    {
+		int ram_addr = (1 << data_bus_width);
+
+		if (addr < ram_addr)
+		{
+		    writeRAM(addr, data);
+		}
+	    }
+
+	    uint8_t readSFR(uint8_t addr)
+	    {
+		uint8_t data = 0xFF;
+
+		switch (addr)
+		{
+		    case 0xB0:
+		    {
+			uint8_t port3_val = readRAM(0x1B0);
+
+			if (is_rwm)
+			{
+			    data = port3_val;
+			}
+			else
+			{
+			    data = (port3_val & portIn(3));
+			}
+		    }
+		    break;
+		    case 0x81:
+		    case 0x88:
+		    case 0xD0:
+		    case 0xE0:
+		    {
+			data = readRAM(addr | 0x100);
+		    }
+		    break;
+		    default:
+		    {
+			cout << "Invalid/unimplemented read from SFR address of " << hex << int(addr) << endl;
+		    }
+		    break;
+		}
+
+		return data;
+	    }
+
+	    void writeSFR(uint8_t addr, uint8_t data)
+	    {
+		if (addr < 0x80)
+		{
+		    return;
+		}
+
+		switch (addr)
+		{
+		    case 0xB0: portOut(3, data); break;
+		    case 0x81:
+		    case 0x88: break;
+		    case 0xD0:
+		    case 0xE0: break;
+		    default:
+		    {
+			cout << "Invalid/unimplemented write to SFR address of " << hex << int(addr) << endl;
+		    }
+		    break;
+		}
+
+		writeRAM((addr | 0x100), data);
+	    }
+
+	    void writeBit(uint8_t addr, bool is_set)
+	    {
+		bool is_sfr = (addr >= 0x80);
+
+		int distance = (is_sfr) ? 8 : 1;
+		int offs = (is_sfr) ? 0x80 : 0x20;
+		int word = ((addr & 0x78) >> 3) * distance + offs;
+		int bit_pos = (addr & 0x7);
+
+		cout << "Reading bit at address of " << hex << int(word) << endl;
+		uint8_t result = readIRAM(word);
+		result = changebit(result, bit_pos, is_set);
+		writeIRAM(word, result);
 	    }
 
 	    uint8_t add_internal(uint8_t accum, uint8_t data, bool is_carry = false)
@@ -243,6 +506,9 @@ namespace bee8051
 	    }
 
 	    uint16_t pc = 0;
+	    bool is_rwm = false;
+
+	    unordered_map<uint16_t, string> mem_names;
     };
 
     class Bee8051 : public BeeMCS51
@@ -253,13 +519,14 @@ namespace bee8051
 
 	    }
 
-	    void init()
+	    virtual void init()
 	    {
 		BeeMCS51::init();
+		add_names(default_names);
 		cout << "Bee8051::Initialized" << endl;
 	    }
 
-	    void shutdown()
+	    virtual void shutdown()
 	    {
 		BeeMCS51::shutdown();
 		cout << "Bee8051::Shutting down..." << endl;
@@ -277,6 +544,7 @@ namespace bee8051
 	    void init()
 	    {
 		BeeMCS51::init();
+		add_names(default_names);
 		cout << "Bee8751::Initialized" << endl;
 	    }
 
